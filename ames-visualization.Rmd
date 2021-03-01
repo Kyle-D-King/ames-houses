@@ -1,0 +1,577 @@
+---
+title: "Reordered"
+output: word_document
+---
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(glmnet)
+library(GGally)
+library(ggcorrplot)
+library(MASS)
+library(RColorBrewer)
+library(rpart)
+library(gridExtra)
+library(skimr)
+library(randomForest)
+library(vip)
+```
+
+
+```{r message=FALSE}
+houses <- read_csv("ames_student.csv")
+
+#skim(houses)
+#No missing data
+```
+
+```{r}
+houses <- houses %>%
+  mutate_if(is.character, as.factor) %>%
+  mutate(
+    MS_SubClass = recode_factor(MS_SubClass, "Duplex_All_Styles_and_Ages" = "Duplex", "One_and_Half_Story_Finished_All_Ages" = "1.5_Story_Finished", "One_and_Half_Story_Unfinished_All_Ages" = "1.5_Story_Unfinished", "One_and_Half_Story_PUD_All_Ages" = "1.5_Story_PUD", "One_Story_1945_and_Older" = "1_Story_1945-", "One_Story_1946_and_Newer_All_Styles" = "1_Story_1946+", "One_Story_PUD_1946_and_Newer" = "1_Story_PUD_1946+", "One_Story_with_Finished_Attic_All_Ages" = "1_Story_F_Attic", "PUD_Multilevel_Split_Level_Foyer" = "PUD_Multilevel", "Split_or_Multilevel" = "Multilevel", "Two_and_Half_Story_All_Ages" = "2.5_Story", "Two_Family_conversion_All_Styles_and_Ages" = "2_Family", "Two_Story_1945_and_Older" = "2_Story_1945-", "Two_Story_1946_and_Newer" = "2_Story_1946+", "Two_Story_PUD_1946_and_Newer" = "2_Story_PUD"),
+    Neighborhood = recode_factor(Neighborhood, "Bloomington_Heights" = "Bloomington", "South_and_West_of_Iowa_State_University" = "SW_of_ISU", "Iowa_DOT_and_Rail_Road" = "DOT_and_RR"),
+    Garage_Type = recode_factor(Garage_Type, "More_Than_Two_Types" = "2+ Types")
+  ) %>%
+  mutate(Year_Built = factor(Year_Built)) %>%
+  mutate(Year_Remod_Add = factor(Year_Remod_Add)) %>%
+  mutate(Bsmt_Full_Bath = factor(Bsmt_Full_Bath)) %>%
+  mutate(Bsmt_Half_Bath = factor(Bsmt_Half_Bath)) %>%
+  mutate(Full_Bath = factor(Full_Bath)) %>%
+  mutate(Half_Bath = factor(Half_Bath)) %>%
+  mutate(Bedroom_AbvGr = factor(Bedroom_AbvGr)) %>%
+  mutate(Kitchen_AbvGr = factor(Kitchen_AbvGr)) %>%
+  mutate(TotRms_AbvGrd = factor(TotRms_AbvGrd)) %>%
+  mutate(Fireplaces = factor(Fireplaces)) %>%
+  mutate(Garage_Cars = factor(Garage_Cars)) %>%
+  mutate(Mo_Sold = factor(Mo_Sold)) %>%
+  mutate(Year_Sold = factor(Year_Sold))
+
+set.seed(525600) #It's easy to see my music choice while I'm working on this...
+house_split <- initial_split(houses, prop = 0.7, strata = Above_Median)
+train <- training(house_split)
+test <- testing(house_split)
+```
+
+# Random Forest Predictors
+```{r Random Forest Feature Selection}
+#set.seed(525600)
+#rf_folds <- vfold_cv(train, v = 5)
+
+#house_recipe <- recipe(Above_Median ~., train) %>%
+#  step_dummy(all_nominal(), -all_outcomes())
+
+#rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 500) %>%
+#  set_engine("ranger", importance = "permutation") %>%
+#  set_mode("classification")
+
+#house_wflow <-
+#  workflow() %>%
+#  add_model(rf_model) %>%
+#  add_recipe(house_recipe)
+
+#set.seed(525600)
+#rf_res_tuned <- tune_grid(
+#  house_wflow,
+#  resamples = rf_folds
+#)
+
+#best_rf <- select_best(rf_res_tuned, "accuracy")
+
+#final_rf <- finalize_workflow(
+#  house_wflow,
+#  best_rf
+#)
+#final_rf
+#
+#final_rf_fit <- fit(final_rf, train)
+
+#saveRDS(final_rf_fit, "house_fit.rds")
+```
+
+
+```{r}
+final_rf_fit <- readRDS("house_fit.rds")
+
+final_rf_fit %>% pull_workflow_fit() %>% vip(geom = "point")
+```
+
+
+
+#Random Forest Top Predictors:
+```{r}
+ggplot(train, aes(x = Above_Median, y = Gr_Liv_Area)) + geom_boxplot()
+```
+
+
+```{r}
+p1 <- ggplot(train, aes(x = Full_Bath, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Full_Bath, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Garage_Cars, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Garage_Cars, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+ggplot(train, aes(x = Above_Median, y = Garage_Area)) + geom_boxplot()
+ggplot(train, aes(x = Above_Median, y = First_Flr_SF)) + geom_boxplot()
+ggplot(train, aes(x = Above_Median, y = Total_Bsmt_SF)) + geom_boxplot()
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Foundation, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Foundation, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Garage_Type, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Garage_Type, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Exter_Qual, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Exter_Qual, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+
+
+# Probable Strong Predictors
+
+```{r}
+p1 <- ggplot(train, aes(x = MS_SubClass, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = MS_SubClass, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Neighborhood, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Neighborhood, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Overall_Qual, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Overall_Qual, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Exterior_1st, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Exterior_1st, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Bsmt_Qual, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Bsmt_Qual, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = BsmtFin_Type_1, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = BsmtFin_Type_1, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Kitchen_Qual, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Kitchen_Qual, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Fireplaces, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Fireplaces, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Garage_Finish, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Garage_Finish, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = TotRms_AbvGrd, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = TotRms_AbvGrd, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Heating_QC, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Heating_QC, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+ggplot(train, aes(x = Above_Median, y = Open_Porch_SF)) + geom_boxplot() + ylim(0,300)
+ggplot(train, aes(x = Above_Median, y = Wood_Deck_SF)) + geom_boxplot() +ylim(0,600)
+```
+
+
+
+
+# Medium Predictors
+
+```{r}
+p1 <- ggplot(train, aes(x = Mas_Vnr_Type, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Mas_Vnr_Type, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Year_Built, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Year_Built, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Lot_Shape, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Lot_Shape, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = House_Style, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = House_Style, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = MS_Zoning, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = MS_Zoning, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2,nrow=1)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Bsmt_Exposure, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Bsmt_Exposure, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Bsmt_Full_Bath, fill = Above_Median)) + geom_bar(position = "fill") 
+p2 <- ggplot(train, aes(x = Bsmt_Full_Bath, fill = Above_Median)) + geom_bar() 
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Half_Bath, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Half_Bath, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+
+
+```{r}
+p1 <- ggplot(train, aes(x = Year_Remod_Add, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Year_Remod_Add, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+ggplot(train, aes(x = Above_Median, y = Lot_Area)) + geom_boxplot() + ylim(0,25000)
+ggplot(train, aes(x = Above_Median, y = Lot_Frontage)) + geom_boxplot()
+ggplot(train, aes(x = Above_Median, y = Bsmt_Unf_SF)) + geom_boxplot()
+```
+
+
+
+
+
+# Low Predictors
+Low predictors are categorical variables that have most values in one or two sections, but anything that falls outside of that category is a strong indicator on the few items that are in it.  
+```{r}
+p1 <- ggplot(train, aes(x = Alley, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Alley, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Land_Contour, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Land_Contour, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Condition_1, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Condition_1, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Bldg_Type, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Bldg_Type, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#These results don't seem to make much sense. Why would "Above Average" have a lower rate of being above the median than "Average"? Same with "Very Good".
+p1 <- ggplot(train, aes(x = Overall_Cond, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Overall_Cond, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Roof_Style, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Roof_Style, fill = Above_Median)) + geom_bar() 
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Exter_Cond, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Exter_Cond, fill = Above_Median)) + geom_bar() 
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Central_Air, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Central_Air, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Electrical, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Electrical, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Garage_Qual, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Garage_Qual, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Paved_Drive, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Paved_Drive, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2, ncol = 2)
+```
+
+```{r}
+#Not worthwhile
+p1 <- ggplot(train, aes(x = Fence, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Fence, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2, ncol=2)
+```
+
+```{r}
+#Probably not worthwhile
+p1 <- ggplot(train, aes(x = Sale_Type, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Sale_Type, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Bedroom_AbvGr, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Bedroom_AbvGr, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Kitchen_AbvGr, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Kitchen_AbvGr, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Sale_Condition, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Sale_Condition, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+ggplot(train, aes(x = Above_Median, y = Second_Flr_SF)) + geom_boxplot()
+```
+
+
+
+
+# Potential Multi-collinearity
+```{r}
+#Is very similar to number of fireplaces. 
+p1 <- ggplot(train, aes(x = Fireplace_Qu, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Fireplace_Qu, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+ggplot(train, aes(x = Above_Median, y = Longitude)) + geom_boxplot()
+ggplot(train, aes(x = Above_Median, y = Latitude)) + geom_boxplot()
+#Longitude and Lattitude does have an impact on house prices, but I am guessing that has to do with neighborhood locations throughout the city.
+
+ggplot(train, aes(x = Above_Median, y = Mas_Vnr_Area)) + geom_boxplot() +ylim(0,750) #With the majority of the below average houses at 0, that statistic is incorporated into the Mas_Vnr_Type categorical data.
+
+
+```
+
+```{r}
+#Probably not worthwhile. If it is, only choose this or Garage_Qual
+p1 <- ggplot(train, aes(x = Garage_Cond, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Garage_Cond, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Almost exactly the same as Exterior_1st
+p1 <- ggplot(train, aes(x = Exterior_2nd, fill = Above_Median)) + geom_bar(position = "fill") + theme(axis.text.x = element_text(angle = 90))
+p2 <- ggplot(train, aes(x = Exterior_2nd, fill = Above_Median)) + geom_bar() + theme(axis.text.x = element_text(angle = 90))
+
+grid.arrange(p1,p2)
+```
+
+
+
+# Bad/no predictors
+```{r}
+#Don't include
+p1 <- ggplot(train, aes(x = Street, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Street, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Don't include
+p1 <- ggplot(train, aes(x = Condition_2, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Condition_2, fill = Above_Median)) + geom_bar() 
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Don't include
+p1 <- ggplot(train, aes(x = Roof_Matl, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Roof_Matl, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Leave Out
+p1 <- ggplot(train, aes(x = BsmtFin_Type_2, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = BsmtFin_Type_2, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Leave this out
+p1 <- ggplot(train, aes(x = Heating, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Heating, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Not Worthwhile
+p1 <- ggplot(train, aes(x = Pool_QC, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Pool_QC, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Not Worthwhile
+p1 <- ggplot(train, aes(x = Misc_Feature, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Misc_Feature, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Leave Out
+p1 <- ggplot(train, aes(x = Mo_Sold, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Mo_Sold, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Leave out
+p1 <- ggplot(train, aes(x = Year_Sold, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Year_Sold, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#This does nothing. Leave out.
+p1 <- ggplot(train, aes(x = Land_Slope, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Land_Slope, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+p1 <- ggplot(train, aes(x = Functional, fill = Above_Median)) + geom_bar(position = "fill")
+p2 <- ggplot(train, aes(x = Functional, fill = Above_Median)) + geom_bar()
+
+grid.arrange(p1,p2)
+```
+
+```{r}
+#Flat Boxplots (only outliers have any value)
+p1 <- ggplot(train, aes(x = Above_Median, y = BsmtFin_SF_2)) + geom_boxplot()
+p2 <- ggplot(train, aes(x = Above_Median, y = Low_Qual_Fin_SF)) + geom_boxplot()
+p3 <- ggplot(train, aes(x = Above_Median, y = Enclosed_Porch)) + geom_boxplot()
+p4 <- ggplot(train, aes(x = Above_Median, y = Three_season_porch)) + geom_boxplot()
+p5 <- ggplot(train, aes(x = Above_Median, y = Screen_Porch)) + geom_boxplot()
+ggplot(train, aes(x = Above_Median, y = Pool_Area)) + geom_boxplot()
+p7 <- ggplot(train, aes(x = Above_Median, y = Misc_Val)) + geom_boxplot()
+p8 <- ggplot(train, aes(x = Above_Median, y = BsmtFin_SF_1)) + geom_boxplot()
+
+grid.arrange(p1, p2, p3, p4, p5, p7, p8)
+```
